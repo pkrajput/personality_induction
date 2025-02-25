@@ -1,0 +1,8 @@
+openai:
+  api_key: [PLACE KEY HERE] 
+
+huggingface:
+  token: [PLACE TOKEN HERE]
+
+wandb:
+ wandb_key: [PLACE WANDB KEY HERE]
