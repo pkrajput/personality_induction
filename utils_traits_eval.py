@@ -109,3 +109,32 @@ def evaluate_trait_accuracy(
     }
 
     return accuracy_percentages
+
+
+def extract_scores(input_dict):
+    # Create a dictionary to hold the extracted numeric strings
+    result_dict = {}
+
+    for key, strings in input_dict.items():
+        result_dict[key] = []
+        for string in strings:
+            # Check if the string starts with the required prefix
+            prefix = "My score for the statement is: "
+            if string.startswith(prefix):
+                # Try extracting the numeric part immediately after the prefix
+                try:
+                    number = string[len(prefix) :].split()[0]
+                    # Remove any trailing period if present
+                    number = number.rstrip(".")
+                    if number.replace(
+                        ".", "", 1
+                    ).isdigit():  # Check if it's numeric (including decimals)
+                        result_dict[key].append(number)
+                    else:
+                        result_dict[key].append("NaN")
+                except (IndexError, ValueError):
+                    result_dict[key].append("NaN")
+            else:
+                result_dict[key].append("NaN")
+
+    return result_dict
