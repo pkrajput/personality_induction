@@ -8,8 +8,8 @@ import yaml
 import torch
 import wandb
 from datasets import load_dataset
-from peft import LoraConfig, prepare_model_for_kbit_training
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from peft import LoraConfig, prepare_model_for_kbit_training, get_peft_model
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from trl import (
     ORPOConfig,
     ORPOTrainer,
@@ -129,11 +129,23 @@ if __name__ == "__main__":
             tokenizer = AutoTokenizer.from_pretrained(base_model)
             tokenizer.pad_token = tokenizer.eos_token
 
+            # QLoRA config
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch_dtype,
+                bnb_4bit_use_double_quant=True,
+            )
+
             model = AutoModelForCausalLM.from_pretrained(
-                base_model, device_map="auto", attn_implementation=attn_implementation
+                base_model,
+                device_map="auto",
+                quantization_config=bnb_config,
+                attn_implementation=attn_implementation,
             )
 
             model = prepare_model_for_kbit_training(model)
+
             peft_config = LoraConfig(
                 r=16,
                 lora_alpha=32,
@@ -165,14 +177,14 @@ if __name__ == "__main__":
                 max_length=4000,
                 max_prompt_length=1024,
                 beta=0.1,
-                per_device_train_batch_size=1,
-                per_device_eval_batch_size=1,
-                gradient_accumulation_steps=8,
+                per_device_train_batch_size=2,
+                per_device_eval_batch_size=2,
+                gradient_accumulation_steps=4,
                 optim="adamw_hf",
                 num_train_epochs=3,
                 evaluation_strategy="steps",
-                eval_steps=200,
-                logging_steps=600,
+                eval_steps=1000,
+                logging_steps=1000,
                 warmup_steps=500,
                 report_to="wandb",
                 output_dir=f"./results/{new_model}/",
@@ -206,21 +218,31 @@ if __name__ == "__main__":
 
             model, tokenizer = setup_chat_format(model, tokenizer)
 
+            lora_config = LoraConfig(
+                r=8,                                         
+                lora_alpha=32,                                
+                lora_dropout=0.1,                            
+                target_modules=["q_proj", "v_proj"],         
+                bias="none"                                  
+            )
+
+            model = get_peft_model(model, lora_config)
+
             training_args = SFTConfig(
                 output_dir=f"./results/{new_model}/",
                 num_train_epochs=3,
                 learning_rate=1e-5,
-                per_device_train_batch_size=1,
-                per_device_eval_batch_size=1,
-                gradient_accumulation_steps=8,
+                per_device_train_batch_size=2,
+                per_device_eval_batch_size=2,
+                gradient_accumulation_steps=4,
                 warmup_steps=500,
                 weight_decay=0.01,
                 logging_steps=50,
                 evaluation_strategy="steps",
                 save_steps=1000,
-                max_steps=20000,
+                max_steps=1000,
                 logging_dir=f"./results/{new_model}/logs",
-                max_seq_length=2048,
+                max_seq_length=4000,
                 packing=True,
             )
 
@@ -244,8 +266,19 @@ if __name__ == "__main__":
             tokenizer = AutoTokenizer.from_pretrained(base_model)
             tokenizer.pad_token = tokenizer.eos_token
 
+            # QLoRA config
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch_dtype,
+                bnb_4bit_use_double_quant=True,
+            )
+
             model = AutoModelForCausalLM.from_pretrained(
-                base_model, device_map="auto", attn_implementation=attn_implementation
+                base_model,
+                device_map="auto",
+                quantization_config=bnb_config,
+                attn_implementation=attn_implementation,
             )
 
             model = prepare_model_for_kbit_training(model)
@@ -276,14 +309,14 @@ if __name__ == "__main__":
                 lr_scheduler_type="linear",
                 max_length=4000,
                 max_prompt_length=1024,
-                per_device_train_batch_size=1,
-                per_device_eval_batch_size=1,
-                gradient_accumulation_steps=8,
+                per_device_train_batch_size=2,
+                per_device_eval_batch_size=2,
+                gradient_accumulation_steps=4,
                 optim="adamw_hf",
                 num_train_epochs=3,
                 evaluation_strategy="steps",
-                eval_steps=200,
-                logging_steps=600,
+                eval_steps=1000,
+                logging_steps=1000,
                 warmup_steps=500,
                 report_to="wandb",
                 output_dir=f"./results/{new_model}/",
