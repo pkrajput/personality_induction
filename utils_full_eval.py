@@ -1,220 +1,67 @@
+"""
+Utility functions for full 5D personality profile evaluation.
+
+Evaluates whether the model recovers the complete Big Five vector,
+using a relaxed criterion (>= 4 out of 5 traits correct) or strict
+exact match (all 5 correct).
+"""
+
+from utils_traits_eval import (
+    split_responses_by_trait,
+    parse_responses,
+    calculate_personality_scores,
+)
+
+
 def split_dict_in_half(data):
-    first_half = {}
-    second_half = {}
-
-    for key, value_list in data.items():
-        mid = (len(value_list) + 1) // 2
-        first_half[key] = value_list[:mid]
-        second_half[key] = value_list[mid:]
-
-    return first_half, second_half
+    """Split each value list in a dict into two halves (for train/test splits)."""
+    first, second = {}, {}
+    for key, vals in data.items():
+        mid = (len(vals) + 1) // 2
+        first[key] = vals[:mid]
+        second[key] = vals[mid:]
+    return first, second
 
 
-def split_responses_by_trait(questions_dict: dict, responses_dict: dict) -> list:
+def evaluate_success_rate(questions_dict, responses_dict, expected_combinations,
+                          total_samples=32, min_correct=4):
     """
-    Split the responses based on the number of questions in each trait for 32 samples.
+    Evaluate success rate: a sample passes if >= min_correct traits match.
 
     Args:
-        questions_dict (dict): Dictionary containing the questions for each trait.
-                               Format: {trait: [{"question": str, "math": int}, ...]}.
-        responses_dict (dict): Dictionary containing responses for each trait.
-                               Format: {'trait': [responses]}.
+        questions_dict: Trait -> question list
+        responses_dict: Trait -> flat response list
+        expected_combinations: List of expected trait polarity lists
+        total_samples: Number of profiles (default 32)
+        min_correct: Minimum traits correct to count as success (default 4)
 
     Returns:
-        list: A list of response dictionaries split into 32 samples.
-              Format: [{trait: [responses]}, ...].
+        Dict with success_percentage, successful_samples, total_samples
     """
-    # Calculate the number of questions per trait
-    question_counts = {
-        trait: len(questions) for trait, questions in questions_dict.items()
-    }
+    split_samples = split_responses_by_trait(questions_dict, responses_dict, total_samples)
+    parsed = parse_responses(questions_dict, split_samples)
 
-    # Initialize a list to store the 32 samples
-    total_samples = 32
-    split_samples = [{} for _ in range(total_samples)]
-
-    # For each trait, split responses into 32 chunks
-    for trait, responses in responses_dict.items():
-        chunk_size = question_counts[
-            trait
-        ]  # Determine the number of responses needed for each sample
-        assert (
-            len(responses) == total_samples * chunk_size
-        ), f"Mismatch in response length for {trait}. Expected: {total_samples * chunk_size}, Got: {len(responses)}"
-
-        # Split the responses into chunks for each sample
-        for i in range(total_samples):
-            start = i * chunk_size
-            end = start + chunk_size
-            split_samples[i][trait] = responses[start:end]
-
-    return split_samples
-
-
-def parse_responses(questions_dict: dict, split_samples: list) -> list:
-    """
-    Parse the split samples into a format compatible with the scoring function.
-
-    Args:
-        questions_dict (dict): Dictionary containing questions and multipliers for each trait.
-                               Format: {trait: [{"question": str, "math": int}, ...]}.
-        split_samples (list): List of split response samples.
-                              Format: [{trait: [responses]}, ...].
-
-    Returns:
-        list: A list of response dictionaries in the format:
-              [{question_id: response}, ...].
-    """
-    parsed_samples = []
-
-    for sample in split_samples:
-        sample_responses = {}
-        question_id = 1
-
-        # Map the responses to the corresponding questions in each trait
-        for trait, responses in sample.items():
-            questions = questions_dict[trait]
-            for idx, response in enumerate(responses):
-                try:
-                    sample_responses[question_id] = int(response)
-                except ValueError:
-                    # Skip invalid responses that cannot be converted to int
-                    continue
-                question_id += 1
-
-        parsed_samples.append(sample_responses)
-
-    return parsed_samples
-
-
-def evaluate_success_rate(
-    questions_dict: dict, responses_dict: dict, expected_combinations: list
-) -> dict:
-    """
-    Evaluate success rate based on comparison of calculated traits to expected traits.
-
-    Args:
-        questions_dict (dict): Contains trait mapping for questions.
-                               Format: {trait_name: [{"question": str, "math": int}]}.
-        responses_dict (dict): Dictionary containing responses for each trait.
-                               Format: {'trait_name': [score1, score2, ...]}.
-        expected_combinations (list): List of expected combinations of positive/negative traits.
-                                      Format: [[trait1, trait2, trait3, ...], ...].
-
-    Returns:
-        dict: Dictionary with success percentage and number of successful samples.
-    """
-    # Split responses into 32 separate samples based on traits
-    split_samples = split_responses_by_trait(questions_dict, responses_dict)
-
-    # Parse responses into a format compatible with scoring
-    response_samples = parse_responses(questions_dict, split_samples)
-
-    # Calculate the success rate using parsed samples.
-    successful_samples = 0
-
-    for idx, response_dict in enumerate(response_samples):
-        # Calculate the average scores for each trait.
+    successful = 0
+    for idx, response_dict in enumerate(parsed):
         trait_scores = calculate_personality_scores(questions_dict, response_dict)
-
-        # Determine if each trait is positive or negative.
-        calculated_traits = [
-            "positive" if score >= 3 else "negative" for score in trait_scores.values()
+        calculated = [
+            "positive" if score >= 3 else "negative"
+            for score in trait_scores.values()
         ]
-
-        # Compare with the expected combination for this sample.
-        if (
-            sum(
-                1
-                for x, y in zip(calculated_traits, expected_combinations[idx])
-                if x == y
-            )
-            >= 4
-        ):
-            successful_samples += 1
-
-    # Calculate success percentage.
-    total_samples = len(response_samples)
-    success_percentage = (
-        (successful_samples / total_samples) * 100 if total_samples > 0 else 0
-    )
+        matches = sum(1 for a, b in zip(calculated, expected_combinations[idx]) if a == b)
+        if matches >= min_correct:
+            successful += 1
 
     return {
-        "success_percentage": success_percentage,
-        "successful_samples": successful_samples,
+        "success_percentage": (successful / total_samples * 100) if total_samples > 0 else 0,
+        "successful_samples": successful,
         "total_samples": total_samples,
     }
 
 
-# Supporting function: Calculates personality scores for individual responses.
-def calculate_personality_scores(questions_dict: dict, response_dict: dict) -> dict:
-    """
-    Calculate the average scores for each personality trait.
-
-    Args:
-        questions_dict (dict): Dictionary with question mappings for each trait.
-                               Format: {trait_name: [{"question": str, "math": int}]}.
-        response_dict (dict): Dictionary with the recorded responses for each question.
-                              Format: {question_id: score}.
-
-    Returns:
-        dict: Average scores for each personality trait.
-    """
-    trait_scores = {}
-    question_id = 1
-
-    for trait, questions in questions_dict.items():
-        total_score = 0
-        count = 0
-
-        for question in questions:
-            if question_id in response_dict:
-                try:
-                    score = int(response_dict[question_id])
-                    # Reverse the score based on math value (if applicable)
-                    if question["math"] == -1:
-                        score = 6 - score
-
-                    total_score += score
-                    count += 1
-                except ValueError:
-                    # Skip invalid scores that cannot be converted to int
-                    continue
-            question_id += 1
-
-        # Calculate average if count is not zero.
-        if count > 0:
-            trait_scores[trait] = total_score / count
-        else:
-            trait_scores[trait] = 0  # If no valid questions, set score to 0.
-
-    return trait_scores
-
-
-def extract_scores(input_dict):
-    # Create a dictionary to hold the extracted numeric strings
-    result_dict = {}
-
-    for key, strings in input_dict.items():
-        result_dict[key] = []
-        for string in strings:
-            # Check if the string starts with the required prefix
-            prefix = "My score for the statement is: "
-            if string.startswith(prefix):
-                # Try extracting the numeric part immediately after the prefix
-                try:
-                    number = string[len(prefix) :].split()[0]
-                    # Remove any trailing period if present
-                    number = number.rstrip(".")
-                    if number.replace(
-                        ".", "", 1
-                    ).isdigit():  # Check if it's numeric (including decimals)
-                        result_dict[key].append(number)
-                    else:
-                        result_dict[key].append("NaN")
-                except (IndexError, ValueError):
-                    result_dict[key].append("NaN")
-            else:
-                result_dict[key].append("NaN")
-
-    return result_dict
+def evaluate_exact_match(questions_dict, responses_dict, expected_combinations, total_samples=32):
+    """Strict exact match: all 5 traits must be correct."""
+    return evaluate_success_rate(
+        questions_dict, responses_dict, expected_combinations,
+        total_samples=total_samples, min_correct=5,
+    )

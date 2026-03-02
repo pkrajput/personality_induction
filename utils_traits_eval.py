@@ -1,140 +1,150 @@
-def split_responses_by_trait(
-    questions_dict: dict, responses_dict: dict, total_samples: int
-) -> list:
+"""
+Utility functions for per-trait personality evaluation.
+
+Evaluates individual Big Five trait accuracy by comparing calculated trait
+scores from questionnaire responses against expected personality profiles.
+"""
+
+
+def split_responses_by_trait(questions_dict, responses_dict, total_samples):
     """
-    Split the responses based on the number of questions in each trait for total number of samples.
+    Split flat responses into per-sample chunks based on question counts per trait.
+
+    Args:
+        questions_dict: {trait_name: [{"question": str, "math": int}, ...]}
+        responses_dict: {trait_name: [all responses concatenated across samples]}
+        total_samples: Number of personality profiles evaluated
+
+    Returns:
+        List of dicts, one per sample: [{trait_name: [responses for this sample]}, ...]
     """
-    question_counts = {
-        trait: len(questions) for trait, questions in questions_dict.items()
-    }
-    total_samples = total_samples
+    question_counts = {trait: len(qs) for trait, qs in questions_dict.items()}
     split_samples = [{} for _ in range(total_samples)]
 
     for trait, responses in responses_dict.items():
         chunk_size = question_counts[trait]
-        assert (
-            len(responses) == total_samples * chunk_size
-        ), f"Mismatch in response length for {trait}. Expected: {total_samples * chunk_size}, Got: {len(responses)}"
-
+        assert len(responses) == total_samples * chunk_size, (
+            f"Mismatch for {trait}: expected {total_samples * chunk_size}, got {len(responses)}"
+        )
         for i in range(total_samples):
-            start = i * chunk_size
-            end = start + chunk_size
-            split_samples[i][trait] = responses[start:end]
+            split_samples[i][trait] = responses[i * chunk_size : (i + 1) * chunk_size]
 
     return split_samples
 
 
-def parse_responses(questions_dict: dict, split_samples: list) -> list:
+def parse_responses(questions_dict, split_samples):
     """
-    Parse the split samples into a format compatible with the scoring function.
-    """
-    parsed_samples = []
+    Convert split samples into {question_id: int_score} dicts for scoring.
 
+    Args:
+        questions_dict: Trait -> question list mapping
+        split_samples: Output of split_responses_by_trait
+
+    Returns:
+        List of {question_id: score} dicts, one per sample
+    """
+    parsed = []
     for sample in split_samples:
-        sample_responses = {}
-        question_id = 1
-
-        for trait, responses in sample.items():
-            questions = questions_dict[trait]
-            for idx, response in enumerate(responses):
+        responses = {}
+        qid = 1
+        for trait, vals in sample.items():
+            for val in vals:
                 try:
-                    sample_responses[question_id] = int(response)
+                    responses[qid] = int(val)
                 except ValueError:
-                    continue
-                question_id += 1
-
-        parsed_samples.append(sample_responses)
-
-    return parsed_samples
+                    pass
+                qid += 1
+        parsed.append(responses)
+    return parsed
 
 
-def calculate_personality_scores(questions_dict: dict, response_dict: dict) -> dict:
+def calculate_personality_scores(questions_dict, response_dict):
     """
-    Calculate the average scores for each personality trait.
-    """
-    trait_scores = {}
-    question_id = 1
+    Compute average score per trait, applying reverse scoring where math == -1.
 
+    Args:
+        questions_dict: {trait: [{"question": str, "math": 1|-1}, ...]}
+        response_dict: {question_id: score}
+
+    Returns:
+        {trait: average_score}
+    """
+    scores = {}
+    qid = 1
     for trait, questions in questions_dict.items():
-        total_score = 0
-        count = 0
-
-        for question in questions:
-            if question_id in response_dict:
+        total, count = 0, 0
+        for q in questions:
+            if qid in response_dict:
                 try:
-                    score = int(response_dict[question_id])
-                    if question["math"] == -1:
-                        score = 6 - score
-
-                    total_score += score
+                    s = int(response_dict[qid])
+                    if q["math"] == -1:
+                        s = 6 - s
+                    total += s
                     count += 1
                 except ValueError:
-                    continue
-            question_id += 1
-
-        trait_scores[trait] = total_score / count if count > 0 else 0
-
-    return trait_scores
+                    pass
+            qid += 1
+        scores[trait] = total / count if count > 0 else 0
+    return scores
 
 
-def evaluate_trait_accuracy(
-    questions_dict: dict, responses_dict: dict, expected_combinations: list
-) -> dict:
+def evaluate_trait_accuracy(questions_dict, responses_dict, expected_combinations, total_samples=32):
     """
-    Evaluate individual trait accuracy based on comparison of calculated traits to expected traits.
+    Evaluate per-trait accuracy: what fraction of samples have each trait correct.
+
+    Args:
+        questions_dict: Trait -> question list
+        responses_dict: Trait -> flat response list
+        expected_combinations: List of expected trait lists, e.g.
+            [["positive", "negative", ...], ...] one per sample
+        total_samples: Number of profiles evaluated (default 32)
+
+    Returns:
+        {trait: accuracy_percentage}
     """
-    split_samples = split_responses_by_trait(questions_dict, responses_dict)
-    response_samples = parse_responses(questions_dict, split_samples)
+    split_samples = split_responses_by_trait(questions_dict, responses_dict, total_samples)
+    parsed = parse_responses(questions_dict, split_samples)
 
-    trait_correct_counts = {trait: 0 for trait in questions_dict.keys()}
-    total_counts = len(response_samples)
+    trait_correct = {trait: 0 for trait in questions_dict}
+    trait_names = list(questions_dict.keys())
 
-    for idx, response_dict in enumerate(response_samples):
+    for idx, response_dict in enumerate(parsed):
         trait_scores = calculate_personality_scores(questions_dict, response_dict)
-        calculated_traits = {
+        calculated = {
             trait: "positive" if score >= 3 else "negative"
             for trait, score in trait_scores.items()
         }
+        for i, trait in enumerate(trait_names):
+            if calculated[trait] == expected_combinations[idx][i]:
+                trait_correct[trait] += 1
 
-        for trait, calculated in calculated_traits.items():
-            expected = expected_combinations[idx][
-                list(questions_dict.keys()).index(trait)
-            ]
-            if calculated == expected:
-                trait_correct_counts[trait] += 1
-
-    accuracy_percentages = {
-        trait: (correct / total_counts) * 100
-        for trait, correct in trait_correct_counts.items()
-    }
-
-    return accuracy_percentages
+    return {trait: (c / total_samples) * 100 for trait, c in trait_correct.items()}
 
 
 def extract_scores(input_dict):
-    # Create a dictionary to hold the extracted numeric strings
-    result_dict = {}
+    """
+    Extract numeric scores from responses prefixed with 'My score for the statement is: '.
 
+    Args:
+        input_dict: {trait: [response_strings]}
+
+    Returns:
+        {trait: [score_strings or "NaN"]}
+    """
+    result = {}
+    prefix = "My score for the statement is: "
     for key, strings in input_dict.items():
-        result_dict[key] = []
-        for string in strings:
-            # Check if the string starts with the required prefix
-            prefix = "My score for the statement is: "
-            if string.startswith(prefix):
-                # Try extracting the numeric part immediately after the prefix
+        result[key] = []
+        for s in strings:
+            if s.startswith(prefix):
                 try:
-                    number = string[len(prefix) :].split()[0]
-                    # Remove any trailing period if present
-                    number = number.rstrip(".")
-                    if number.replace(
-                        ".", "", 1
-                    ).isdigit():  # Check if it's numeric (including decimals)
-                        result_dict[key].append(number)
+                    num = s[len(prefix):].split()[0].rstrip(".")
+                    if num.replace(".", "", 1).isdigit():
+                        result[key].append(num)
                     else:
-                        result_dict[key].append("NaN")
+                        result[key].append("NaN")
                 except (IndexError, ValueError):
-                    result_dict[key].append("NaN")
+                    result[key].append("NaN")
             else:
-                result_dict[key].append("NaN")
-
-    return result_dict
+                result[key].append("NaN")
+    return result
