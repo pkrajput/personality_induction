@@ -308,30 +308,3 @@ If a model response doesn't follow the expected format, it is marked as NaN and 
 | Warmup steps | 500 | 500 |
 | Inference temperature | 0 (greedy) | 0 (greedy) |
 
----
-
-## Quick Verification
-
-Run a smoke test to verify all training pipelines work with your hardware:
-
-```bash
-python smoke_test.py
-```
-
-This loads Gemma-2-2B and Llama-3.2-3B, runs 3 steps each of SFT, DPO, and ORPO, and reports pass/fail.
-
----
-
-## Citation
-
-```bibtex
-@inproceedings{personality-induction-lrec2026,
-  title     = {Evaluation Drift in {LLM} Personality Induction: Are We Moving the Goalpost?},
-  booktitle = {Proceedings of the 2026 Joint International Conference on Computational Linguistics, Language Resources and Evaluation (LREC-COLING 2026)},
-  year      = {2026},
-}
-```
-
-## License
-
-MIT License. See the paper's Ethics Statement for responsible use guidelines.
