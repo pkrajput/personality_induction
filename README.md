@@ -39,7 +39,6 @@ personality_induction/
 ├── evaluate.py                    # Results analysis and comparison
 ├── utils_traits_eval.py           # Per-trait accuracy evaluation utilities
 ├── utils_full_eval.py             # Full 5D profile evaluation utilities
-├── smoke_test.py                  # Quick verification that training pipelines work
 └── figures/                       # Paper figures
 ```
 

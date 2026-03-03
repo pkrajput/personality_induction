@@ -31,12 +31,10 @@ parser.add_argument(
 )
 
 
-# Define a function to convert 'y' or 'n' to 'positive' or 'negative'
 def convert_label_to_trait(label):
     return "positive" if label == "y" else "negative"
 
 
-# Define a function to create the JSON structure for each row
 def create_json_structure(row):
     traits = {
         "openness": convert_label_to_trait(row["cOPN"]),
@@ -70,7 +68,6 @@ def create_json_structure(row):
     return message
 
 
-# Function to write a DataFrame to a JSONL file
 def write_to_jsonl(df, filename):
     json_list = [create_json_structure(row) for _, row in df.iterrows()]
     with open(filename, "w") as f:
@@ -88,7 +85,6 @@ if __name__ == "__main__":
     client = OpenAI(api_key=api_key)
     df = pd.read_csv(args.essays_path, sep=",", encoding="ISO-8859-1")
 
-    # List of categories to add as columns
     categories = [
         "harassment",
         "harassment_threatening",
@@ -103,7 +99,6 @@ if __name__ == "__main__":
         "violence_graphic",
     ]
 
-    # Add new columns for each category with default value as False
     for category in categories:
         df[category] = False
 
@@ -137,17 +132,13 @@ if __name__ == "__main__":
                 print("Rate limit exceeded, waiting for 25 seconds before retrying...")
                 time.sleep(25)
 
-    # Save the DataFrame with the moderation categories back to a CSV file
     df.to_csv(args.essays_with_moderation_save_path, index=False, encoding="ISO-8859-1")
 
-    # Filter the DataFrame to keep only rows where all category values are False
     filtered_df = df[(df[categories] == False).all(axis=1)]
 
-    # Split the filtered DataFrame into train (80%), validation (10%), and test (10%) sets
     train_df, temp_df = train_test_split(filtered_df, test_size=0.2, random_state=42)
     val_df, test_df = train_test_split(temp_df, test_size=0.5, random_state=42)
 
-    # Write the train, validation, and test sets to separate JSONL files
     write_to_jsonl(
         train_df, os.path.join(args.path_to_folder_to_save_jsonl_files, "train.jsonl")
     )
